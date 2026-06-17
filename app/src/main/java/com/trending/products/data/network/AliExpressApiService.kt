@@ -67,7 +67,7 @@ data class AliProduct(
     val target_sale_price: String?,
     val target_original_price: String?,
     val evaluate_rate: String?,
-    val lastest_volume: Long?,
+    val lastest_volume: Int?,
     val product_detail_url: String?,
     val second_level_category_name: String?
 )
