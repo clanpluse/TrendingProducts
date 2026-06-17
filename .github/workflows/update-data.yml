@@ -2,7 +2,8 @@ name: Update Trending Products Data
 
 on:
   schedule:
-    - cron: '0 6 * * *'
+    # مرتين أسبوعياً (الإثنين والخميس 6ص UTC) للبقاء ضمن حد المفتاح المجاني 100 طلب/شهر
+    - cron: '0 6 * * 1,4'
   workflow_dispatch:
 
 permissions:
@@ -31,6 +32,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/trending.json
+          git add data/trending.json data/history.json
           git diff --staged --quiet || git commit -m "chore: update trending products data [$(date -u '+%Y-%m-%d %H:%M')]"
           git push
