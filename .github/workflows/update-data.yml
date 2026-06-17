@@ -20,9 +20,11 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests pytrends
+        run: pip install requests
 
       - name: Fetch trending products
+        env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: python scripts/fetch_trending.py
 
       - name: Commit data
