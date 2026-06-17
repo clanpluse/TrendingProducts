@@ -4,168 +4,137 @@ import com.trending.products.data.model.Product
 import com.trending.products.data.model.ProductSource
 import com.trending.products.data.model.TrendDirection
 import com.trending.products.data.network.AliExpressSigner
-import com.trending.products.data.network.AmazonRssParser
 import com.trending.products.data.network.ApiConfig
+import com.trending.products.data.network.RedditPost
 import com.trending.products.data.network.RetrofitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 class ProductRepository {
 
-    // Amazon Best Sellers RSS — FREE, no key needed
-    private val amazonCategories = listOf(
-        "electronics"    to "إلكترونيات",
-        "beauty"         to "جمال وعناية",
-        "toys-and-games" to "ألعاب وأطفال",
-        "sporting-goods" to "رياضة ولياقة",
-        "home-garden"    to "منزل وديكور",
-        "tools"          to "أدوات"
-    )
-
-    // ─── Tab 1: أكثر المنتجات مبيعاً (Amazon Best Sellers) ──────────────────
+    // ─── Tab 1: أكثر المنتجات مبيعاً (Reddit r/deals + r/BuyItForLife) ─────────
 
     suspend fun getTopSellingProducts(): Result<List<Product>> = withContext(Dispatchers.IO) {
         runCatching {
-            // Fetch multiple Amazon categories in parallel
-            val deferred = amazonCategories.map { (cat, catAr) ->
-                async {
-                    fetchAmazonBestSellers(cat, catAr)
-                }
+            val subreddits = listOf("deals", "BuyItForLife", "frugalmalefashion", "sales")
+            val deferred = subreddits.map { sub ->
+                async { fetchRedditProducts(sub, "day", 15, ProductSource.AMAZON) }
             }
-            val allProducts = deferred.awaitAll().flatten()
+            val all = deferred.awaitAll().flatten()
+                .distinctBy { it.name.take(40) }
+                .sortedByDescending { it.trendScore }
+                .take(25)
 
-            if (allProducts.isEmpty()) {
-                throw Exception("تعذّر جلب البيانات من أمازون. تحقق من الاتصال بالإنترنت.")
-            }
-
-            // Mix categories: take top 3 from each category
-            allProducts
-                .groupBy { it.category }
-                .flatMap { (_, products) -> products.take(3) }
-                .sortedBy { it.trendScore * -1 }
-                .take(20)
+            if (all.isEmpty()) throw Exception("تعذّر جلب البيانات. تحقق من الاتصال بالإنترنت.")
+            all
         }
     }
 
-    // ─── Tab 2: منتجات المصانع الصينية (AliExpress) ──────────────────────────
+    // ─── Tab 2: منتجات المصانع الصينية (AliExpress or Reddit r/Aliexpress) ──────
 
     suspend fun getChineseFactoryProducts(): Result<List<Product>> = withContext(Dispatchers.IO) {
         runCatching {
             if (ApiConfig.isAliExpressConfigured()) {
-                fetchAliExpressHotProducts()
-            } else {
-                // Fallback: Amazon Best Sellers with "Ships from China" context
-                // + show setup message
-                fetchAmazonBestSellers("electronics", "إلكترونيات") +
-                fetchAmazonBestSellers("tools", "أدوات") +
-                fetchAmazonBestSellers("home-garden", "منزل وديكور")
+                val aliProducts = fetchAliExpressHotProducts()
+                if (aliProducts.isNotEmpty()) return@runCatching aliProducts
             }
+            val deferred = listOf(
+                async { fetchRedditProducts("Aliexpress", "week", 20, ProductSource.ALIEXPRESS) },
+                async { fetchRedditProducts("DHgate", "week", 10, ProductSource.ALIEXPRESS) },
+                async { fetchRedditProducts("china_cq", "month", 10, ProductSource.ALIEXPRESS) }
+            )
+            val all = deferred.awaitAll().flatten()
+                .distinctBy { it.name.take(40) }
+                .sortedByDescending { it.trendScore }
+                .take(25)
+
+            if (all.isEmpty()) throw Exception("تعذّر جلب البيانات. تحقق من الاتصال بالإنترنت.")
+            all
         }
     }
 
-    // ─── Tab 3: جديد ورائج (Amazon New Releases + AliExpress New) ────────────
+    // ─── Tab 3: جديد ورائج (Reddit r/shutupandtakemymoney + r/malelivingspace) ──
 
     suspend fun getHotNewProducts(): Result<List<Product>> = withContext(Dispatchers.IO) {
         runCatching {
-            val amazonNew = async { fetchAmazonNewReleases() }
-            val aliNew = async {
+            val deferred = listOf(
+                async { fetchRedditProducts("shutupandtakemymoney", "week", 20, ProductSource.AMAZON) },
+                async { fetchRedditProducts("Gadgets", "day", 15, ProductSource.AMAZON) },
+                async { fetchRedditProducts("tech", "day", 10, ProductSource.AMAZON) }
+            )
+            val ali = async {
                 if (ApiConfig.isAliExpressConfigured()) fetchAliExpressNewProducts()
                 else emptyList()
             }
 
-            val combined = (amazonNew.await() + aliNew.await())
-                .distinctBy { it.name.take(30) }
-                .take(20)
+            val all = (deferred.awaitAll().flatten() + ali.await())
+                .distinctBy { it.name.take(40) }
+                .sortedByDescending { it.trendScore }
+                .take(25)
 
-            if (combined.isEmpty()) throw Exception("تعذّر جلب المنتجات الجديدة.")
-            combined
+            if (all.isEmpty()) throw Exception("تعذّر جلب المنتجات الجديدة.")
+            all
         }
     }
 
-    // ─── Amazon fetchers ──────────────────────────────────────────────────────
+    // ─── Reddit fetcher ───────────────────────────────────────────────────────────
 
-    private fun fetchAmazonBestSellers(category: String, categoryAr: String): List<Product> {
+    private suspend fun fetchRedditProducts(
+        subreddit: String,
+        time: String,
+        limit: Int,
+        source: ProductSource
+    ): List<Product> {
         return try {
-            val url = "https://www.amazon.com/gp/rss/bestsellers/$category/"
-            val response = fetch(url) ?: return emptyList()
-            val body = response.body ?: return emptyList()
-            val items = AmazonRssParser.parse(body.byteStream(), categoryAr)
-            body.close()
+            val response = RetrofitClient.redditApi.getTopPosts(subreddit, time, limit)
+            if (!response.isSuccessful) return emptyList()
 
-            items.mapIndexed { i, item ->
-                Product(
-                    id = "amz_${category}_$i",
-                    name = item.title,
-                    nameAr = item.title,
-                    description = item.description.ifEmpty { "Best seller on Amazon — rank #${item.rank}" },
-                    descriptionAr = item.description.ifEmpty { "الأكثر مبيعاً على أمازون — المرتبة #${item.rank}" },
-                    imageUrl = item.imageUrl,
-                    price = item.price,
-                    currency = "USD",
-                    category = item.category,
-                    categoryAr = categoryAr,
-                    source = ProductSource.AMAZON,
-                    trendScore = maxOf(10, 99 - (i * 4)),
-                    salesCount = "المرتبة #${item.rank}",
-                    rating = 0f,
-                    reviewCount = 0,
-                    url = item.url,
-                    tags = listOf(categoryAr, "Amazon", "Best Seller"),
-                    isNew = false,
-                    trendDirection = TrendDirection.UP
-                )
-            }
+            val posts = response.body()?.data?.children
+                ?.mapNotNull { it.data }
+                ?: return emptyList()
+
+            posts
+                .filter { post ->
+                    val t = post.title ?: ""
+                    post.is_self != true &&
+                    t.isNotBlank() &&
+                    !t.startsWith("Weekly") && !t.startsWith("Monthly") &&
+                    (post.thumbnail?.startsWith("http") == true || post.url?.startsWith("http") == true)
+                }
+                .mapIndexed { i, post ->
+                    val price = extractPrice(post.title ?: "")
+                    val imageUrl = if (post.thumbnail?.startsWith("http") == true) post.thumbnail else ""
+                    val score = post.score ?: 0
+                    Product(
+                        id = "reddit_${subreddit}_${post.id ?: i}",
+                        name = cleanTitle(post.title ?: ""),
+                        nameAr = cleanTitle(post.title ?: ""),
+                        description = "رائج على Reddit — ${score.formatCount()} تصويت",
+                        descriptionAr = "رائج على Reddit — ${score.formatCount()} تصويت",
+                        imageUrl = imageUrl,
+                        price = price,
+                        currency = "USD",
+                        category = subreddit,
+                        categoryAr = mapSubredditAr(subreddit),
+                        source = source,
+                        trendScore = minOf(99, 50 + score / 200),
+                        salesCount = "${score.formatCount()} تصويت",
+                        rating = ((post.upvote_ratio ?: 0.8f) * 5f).coerceIn(0f, 5f),
+                        reviewCount = score,
+                        url = post.url ?: "https://www.reddit.com${post.permalink ?: ""}",
+                        tags = listOf(mapSubredditAr(subreddit), "Reddit", "ترند"),
+                        isNew = subreddit == "shutupandtakemymoney" || subreddit == "Gadgets",
+                        trendDirection = TrendDirection.UP
+                    )
+                }
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    private fun fetchAmazonNewReleases(): List<Product> {
-        val newReleaseCategories = listOf(
-            "electronics" to "إلكترونيات",
-            "beauty" to "جمال وعناية",
-            "toys-and-games" to "ألعاب وأطفال"
-        )
-        return newReleaseCategories.flatMap { (cat, catAr) ->
-            try {
-                val url = "https://www.amazon.com/gp/rss/new-releases/$cat/"
-                val response = fetch(url) ?: return@flatMap emptyList()
-                val body = response.body ?: return@flatMap emptyList()
-                val items = AmazonRssParser.parse(body.byteStream(), catAr)
-                body.close()
-                items.take(4).mapIndexed { i, item ->
-                    Product(
-                        id = "amz_new_${cat}_$i",
-                        name = item.title,
-                        nameAr = item.title,
-                        description = item.description.ifEmpty { "New release on Amazon" },
-                        descriptionAr = item.description.ifEmpty { "إصدار جديد على أمازون" },
-                        imageUrl = item.imageUrl,
-                        price = item.price,
-                        currency = "USD",
-                        category = item.category,
-                        categoryAr = catAr,
-                        source = ProductSource.AMAZON,
-                        trendScore = maxOf(10, 95 - (i * 5)),
-                        salesCount = "جديد",
-                        rating = 0f,
-                        reviewCount = 0,
-                        url = item.url,
-                        tags = listOf(catAr, "Amazon", "New Release"),
-                        isNew = true,
-                        trendDirection = TrendDirection.UP
-                    )
-                }
-            } catch (e: Exception) {
-                emptyList()
-            }
-        }
-    }
-
-    // ─── AliExpress fetchers ──────────────────────────────────────────────────
+    // ─── AliExpress fetchers ──────────────────────────────────────────────────────
 
     private suspend fun fetchAliExpressHotProducts(): List<Product> {
         return try {
@@ -185,10 +154,7 @@ class ProductRepository {
                 "tracking_id" to "default"
             )
             val sign = AliExpressSigner.sign(ApiConfig.ALIEXPRESS_APP_SECRET, params)
-            val response = RetrofitClient.aliExpressApi.getHotProducts(
-                timestamp = timestamp,
-                sign = sign
-            )
+            val response = RetrofitClient.aliExpressApi.getHotProducts(timestamp = timestamp, sign = sign)
             if (!response.isSuccessful) return emptyList()
 
             response.body()
@@ -200,7 +166,7 @@ class ProductRepository {
                         id = "ali_hot_${p.product_id ?: i}",
                         name = p.product_title ?: "AliExpress Product",
                         nameAr = p.product_title ?: "منتج علي إكسبريس",
-                        description = "Hot product from Chinese factories — ${p.lastest_volume ?: 0} orders",
+                        description = "منتج رائج من المصانع الصينية — ${p.lastest_volume ?: 0} طلب",
                         descriptionAr = "منتج رائج من المصانع الصينية — ${p.lastest_volume ?: 0} طلب",
                         imageUrl = p.product_main_image_url ?: "",
                         price = p.target_sale_price?.replace("US \$", "") ?: "0",
@@ -241,10 +207,7 @@ class ProductRepository {
                 "tracking_id" to "default"
             )
             val sign = AliExpressSigner.sign(ApiConfig.ALIEXPRESS_APP_SECRET, params)
-            val response = RetrofitClient.aliExpressApi.getNewProducts(
-                timestamp = timestamp,
-                sign = sign
-            )
+            val response = RetrofitClient.aliExpressApi.getNewProducts(timestamp = timestamp, sign = sign)
             if (!response.isSuccessful) return emptyList()
 
             response.body()
@@ -256,7 +219,7 @@ class ProductRepository {
                         id = "ali_new_${p.product_id ?: i}",
                         name = p.product_title ?: "New AliExpress Product",
                         nameAr = p.product_title ?: "منتج جديد من علي إكسبريس",
-                        description = "New product from Chinese factories",
+                        description = "منتج جديد من المصانع الصينية",
                         descriptionAr = "منتج جديد من المصانع الصينية",
                         imageUrl = p.product_main_image_url ?: "",
                         price = p.target_sale_price?.replace("US \$", "") ?: "0",
@@ -279,19 +242,37 @@ class ProductRepository {
         }
     }
 
-    // ─── HTTP helper ──────────────────────────────────────────────────────────
+    // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-    private fun fetch(url: String): okhttp3.Response? {
-        return try {
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Android; Mobile)")
-                .header("Accept", "application/rss+xml, application/xml, text/xml")
-                .build()
-            val response = RetrofitClient.googleTrendsOkHttp.newCall(request).execute()
-            if (response.isSuccessful) response else null
-        } catch (e: Exception) {
-            null
-        }
+    private fun extractPrice(title: String): String {
+        val regex = Regex("""\$(\d+(?:\.\d{1,2})?)""")
+        return regex.find(title)?.groupValues?.get(1) ?: ""
+    }
+
+    private fun cleanTitle(title: String): String {
+        return title
+            .replace(Regex("""\[.*?\]"""), "")
+            .replace(Regex("""\(.*?\)"""), "")
+            .trim()
+            .take(100)
+    }
+
+    private fun mapSubredditAr(subreddit: String): String = when (subreddit.lowercase()) {
+        "deals" -> "عروض"
+        "buyitforlife" -> "منتجات مدى الحياة"
+        "frugalmalefashion" -> "موضة بأسعار معقولة"
+        "sales" -> "تخفيضات"
+        "aliexpress" -> "علي إكسبريس"
+        "dhgate" -> "مصانع صينية"
+        "china_cq" -> "منتجات صينية"
+        "shutupandtakemymoney" -> "منتجات مبتكرة"
+        "gadgets" -> "أدوات تقنية"
+        "tech" -> "تكنولوجيا"
+        else -> subreddit
+    }
+
+    private fun Int.formatCount(): String = when {
+        this >= 1000 -> "${this / 1000}.${(this % 1000) / 100}k"
+        else -> this.toString()
     }
 }
