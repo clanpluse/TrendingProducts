@@ -52,4 +52,6 @@ dependencies {
     implementation(libs.cardview)
     implementation(libs.shimmer)
     implementation(libs.viewpager2)
+    implementation(libs.activity.ktx)
+    implementation(libs.fragment.ktx)
 }

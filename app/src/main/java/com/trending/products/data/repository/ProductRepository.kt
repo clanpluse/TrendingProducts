@@ -91,7 +91,7 @@ class ProductRepository {
         return try {
             val url = "https://www.amazon.com/gp/rss/bestsellers/$category/"
             val response = fetch(url) ?: return emptyList()
-            val items = AmazonRssParser.parse(response.byteStream(), categoryAr)
+            val items = AmazonRssParser.parse(response.body!!.byteStream(), categoryAr)
 
             items.mapIndexed { i, item ->
                 Product(
@@ -131,7 +131,7 @@ class ProductRepository {
             try {
                 val url = "https://www.amazon.com/gp/rss/new-releases/$cat/"
                 val response = fetch(url) ?: return@flatMap emptyList()
-                val items = AmazonRssParser.parse(response.byteStream(), catAr)
+                val items = AmazonRssParser.parse(response.body!!.byteStream(), catAr)
                 items.take(4).mapIndexed { i, item ->
                     Product(
                         id = "amz_new_${cat}_$i",
