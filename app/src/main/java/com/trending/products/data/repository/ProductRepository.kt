@@ -15,6 +15,7 @@ data class CategoryProducts(
     val topSelling: List<Product>,
     val alibaba: List<Product>,
     val trending: List<Product>,
+    val newBestSellers: List<Product>,
     val exclusive: List<Product>
 )
 
@@ -40,10 +41,11 @@ class ProductRepository {
             else    -> data?.day
         }
         return CategoryProducts(
-            topSelling = tf?.topSelling.orEmpty().mapNotNull { it.toProduct() },
-            alibaba    = tf?.alibaba.orEmpty().mapNotNull { it.toProduct() },
-            trending   = tf?.trending.orEmpty().mapNotNull { it.toProduct() },
-            exclusive  = tf?.exclusive.orEmpty().mapNotNull { it.toProduct() }
+            topSelling     = tf?.topSelling.orEmpty().mapNotNull { it.toProduct() },
+            alibaba        = tf?.alibaba.orEmpty().mapNotNull { it.toProduct() },
+            trending       = tf?.trending.orEmpty().mapNotNull { it.toProduct() },
+            newBestSellers = tf?.newBestSellers.orEmpty().mapNotNull { it.toProduct() },
+            exclusive      = tf?.exclusive.orEmpty().mapNotNull { it.toProduct() }
         )
     }
 

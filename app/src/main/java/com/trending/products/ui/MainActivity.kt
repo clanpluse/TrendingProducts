@@ -39,10 +39,10 @@ class MainActivity : AppCompatActivity() {
         val chipGroup   = findViewById<ChipGroup>(R.id.chipGroupTime)
 
         viewPager.adapter = ProductPagerAdapter(this)
-        viewPager.offscreenPageLimit = 3
+        viewPager.offscreenPageLimit = 4
 
         // تبويب "علي بابا" مخفيّ مؤقتاً
-        val tabs = listOf("🔥 الأعلى مبيعاً", "📈 رائج", "💎 حصري جديد")
+        val tabs = listOf("🔥 الأعلى مبيعاً", "📈 رائج", "🆕 الأكثر مبيعاً الجديد", "💎 حصري جديد")
         TabLayoutMediator(tabLayout, viewPager) { tab, pos -> tab.text = tabs[pos] }.attach()
 
         // فلتر الفترة الزمنية
@@ -66,12 +66,13 @@ class MainActivity : AppCompatActivity() {
 }
 
 class ProductPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) {
-    // تبويب "علي بابا" مخفيّ مؤقتاً — 3 تبويبات فقط
-    override fun getItemCount() = 3
+    // تبويب "علي بابا" مخفيّ مؤقتاً — 4 تبويبات
+    override fun getItemCount() = 4
     override fun createFragment(position: Int): Fragment = when (position) {
         0 -> ProductListFragment.newInstance(ProductListFragment.TAB_TOP_SELLING)
         1 -> ProductListFragment.newInstance(ProductListFragment.TAB_TRENDING)
-        2 -> ProductListFragment.newInstance(ProductListFragment.TAB_EXCLUSIVE)
+        2 -> ProductListFragment.newInstance(ProductListFragment.TAB_NEW_BEST)
+        3 -> ProductListFragment.newInstance(ProductListFragment.TAB_EXCLUSIVE)
         else -> ProductListFragment.newInstance(ProductListFragment.TAB_TOP_SELLING)
     }
 }

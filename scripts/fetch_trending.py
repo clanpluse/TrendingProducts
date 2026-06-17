@@ -296,15 +296,30 @@ def main():
         p["trendScore"] = max(p["trendScore"], 50 + heat // 2)
     trending = trending[:15]
 
-    # ===== حصري جديد: الأحدث (sort=newest) + مبيعات قليلة =====
+    # مجمّع "الأحدث" (sort=newest) — يغذّي قسمين دون تكلفة إضافية
     pool_ex = built["exclusive"]
+
+    # ===== الأكثر مبيعاً الجديد (هذا الشهر): منتجات حديثة مرتّبة حسب الطلبات =====
+    # المنطق: المنتج الحديث مبيعاته التراكمية = مبيعات فترته الأخيرة (≈ الشهر).
+    import copy
+    new_best = copy.deepcopy(pool_ex)
+    new_best.sort(key=lambda p: p["_sales"], reverse=True)
+    new_best = new_best[:15]
+    for p in new_best:
+        p["isNew"] = True
+        s = p["_sales"]
+        # المبيعات حدثت خلال عمر المنتج القصير ⇒ ≈ مبيعات الشهر
+        p["salesCount"] = f"🆕 {s:,} طلب — مبيعات الفترة الأخيرة (منتج جديد)".replace(",", "٬")
+
+    # ===== حصري جديد: الأحدث (sort=newest) + مبيعات قليلة =====
     exclusive = [p for p in pool_ex if p["_age"] <= EXCLUSIVE_MAX_AGE and p["_sales"] < EXCLUSIVE_MAX_SALES]
     if not exclusive:
         exclusive = sorted(pool_ex or all_built, key=lambda p: p["_age"])[:10]
     for p in exclusive:
         p["isNew"] = True
 
-    sections = {"topSelling": top, "alibaba": alibaba, "trending": trending, "exclusive": exclusive}
+    sections = {"topSelling": top, "alibaba": alibaba, "trending": trending,
+                "newBestSellers": new_best, "exclusive": exclusive}
     data = {
         "updatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "calibrated": calibrated,
@@ -323,7 +338,8 @@ def main():
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(new_hist, f)
 
-    print(f"Done: top={len(top)} alibaba={len(alibaba)} trending={len(trending)} exclusive={len(exclusive)} | calibrated={calibrated}")
+    print(f"Done: top={len(top)} alibaba={len(alibaba)} trending={len(trending)} "
+          f"newBest={len(new_best)} exclusive={len(exclusive)} | calibrated={calibrated}")
 
 
 if __name__ == "__main__":

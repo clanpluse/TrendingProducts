@@ -20,10 +20,11 @@ data class TrendingJsonData(
 )
 
 data class TimeframeData(
-    val topSelling: List<JsonProduct>?,   // الأعلى مبيعاً فعلياً
-    val alibaba: List<JsonProduct>?,      // علي بابا ومنافسوه (جملة B2B)
-    val trending: List<JsonProduct>?,     // الأعلى اهتماماً في البحث
-    val exclusive: List<JsonProduct>?     // حصري جديد: مبيعات قليلة + اهتمام صاعد
+    val topSelling: List<JsonProduct>?,      // الأعلى مبيعاً فعلياً
+    val alibaba: List<JsonProduct>?,         // علي بابا ومنافسوه (جملة B2B)
+    val trending: List<JsonProduct>?,        // الأعلى اهتماماً في البحث
+    val newBestSellers: List<JsonProduct>?,  // الأكثر مبيعاً بين الجديدة (≈ مبيعات الشهر)
+    val exclusive: List<JsonProduct>?        // حصري جديد: مبيعات قليلة
 )
 
 data class JsonProduct(

@@ -33,6 +33,9 @@ class ProductViewModel : ViewModel() {
     private val _trending = MutableLiveData<UiState<List<Product>>>()
     val trending: LiveData<UiState<List<Product>>> = _trending
 
+    private val _newBestSellers = MutableLiveData<UiState<List<Product>>>()
+    val newBestSellers: LiveData<UiState<List<Product>>> = _newBestSellers
+
     private val _exclusive = MutableLiveData<UiState<List<Product>>>()
     val exclusive: LiveData<UiState<List<Product>>> = _exclusive
 
@@ -64,10 +67,11 @@ class ProductViewModel : ViewModel() {
 
     private fun emitFromCache() {
         val slice = repository.sliceTimeframe(cached, timeframe)
-        _topSelling.value = toState(slice.topSelling, "لا توجد منتجات في هذه الفترة.")
-        _alibaba.value    = toState(slice.alibaba, "لا توجد بيانات علي بابا في هذه الفترة.")
-        _trending.value   = toState(slice.trending, "لا توجد منتجات رائجة في هذه الفترة.")
-        _exclusive.value  = toState(slice.exclusive, "لا توجد منتجات حصرية في هذه الفترة.")
+        _topSelling.value     = toState(slice.topSelling, "لا توجد منتجات في هذه الفترة.")
+        _alibaba.value        = toState(slice.alibaba, "لا توجد بيانات علي بابا في هذه الفترة.")
+        _trending.value       = toState(slice.trending, "لا توجد منتجات رائجة في هذه الفترة.")
+        _newBestSellers.value = toState(slice.newBestSellers, "لا توجد منتجات جديدة في هذه الفترة.")
+        _exclusive.value      = toState(slice.exclusive, "لا توجد منتجات حصرية في هذه الفترة.")
     }
 
     private fun toState(list: List<Product>, emptyMsg: String): UiState<List<Product>> =
@@ -77,6 +81,7 @@ class ProductViewModel : ViewModel() {
         _topSelling.value = UiState.Loading
         _alibaba.value = UiState.Loading
         _trending.value = UiState.Loading
+        _newBestSellers.value = UiState.Loading
         _exclusive.value = UiState.Loading
     }
 
@@ -84,6 +89,7 @@ class ProductViewModel : ViewModel() {
         _topSelling.value = UiState.Error(msg)
         _alibaba.value = UiState.Error(msg)
         _trending.value = UiState.Error(msg)
+        _newBestSellers.value = UiState.Error(msg)
         _exclusive.value = UiState.Error(msg)
     }
 }

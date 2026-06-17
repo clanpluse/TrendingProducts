@@ -27,6 +27,7 @@ class ProductListFragment : Fragment() {
         const val TAB_ALIBABA = 1
         const val TAB_TRENDING = 2
         const val TAB_EXCLUSIVE = 3
+        const val TAB_NEW_BEST = 4
 
         fun newInstance(tabType: Int) = ProductListFragment().apply {
             arguments = Bundle().apply { putInt(ARG_TAB, tabType) }
@@ -79,6 +80,7 @@ class ProductListFragment : Fragment() {
             TAB_ALIBABA     -> viewModel.alibaba
             TAB_TRENDING    -> viewModel.trending
             TAB_EXCLUSIVE   -> viewModel.exclusive
+            TAB_NEW_BEST    -> viewModel.newBestSellers
             else            -> viewModel.topSelling
         }
         liveData.observe(viewLifecycleOwner) { state ->
