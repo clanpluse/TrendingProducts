@@ -39,4 +39,13 @@ object RetrofitClient {
             .build()
             .create(RedditApiService::class.java)
     }
+
+    val trendingDataApi: TrendingDataService by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://raw.githubusercontent.com/")
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(TrendingDataService::class.java)
+    }
 }
