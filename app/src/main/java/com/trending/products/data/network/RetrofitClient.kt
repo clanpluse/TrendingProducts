@@ -8,30 +8,18 @@ import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
 
-    private val okHttp = OkHttpClient.Builder()
+    val googleTrendsOkHttp: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    val ebayApi: EbayFindingApiService by lazy {
-        Retrofit.Builder()
-            .baseUrl("https://svcs.ebay.com/")
-            .client(okHttp)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(EbayFindingApiService::class.java)
-    }
-
     val aliExpressApi: AliExpressApiService by lazy {
         Retrofit.Builder()
             .baseUrl("https://api-sg.aliexpress.com/")
-            .client(okHttp)
+            .client(googleTrendsOkHttp)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(AliExpressApiService::class.java)
     }
-
-    // Google Trends RSS — plain HTTP client, returns XML
-    val googleTrendsOkHttp: OkHttpClient = okHttp
 }
