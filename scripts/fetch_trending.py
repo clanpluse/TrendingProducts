@@ -158,15 +158,22 @@ def to_product(raw, section, age_days, calibrated, sales_delta, days_between):
         else:
             age_label = f"عمره {age_days/365:.1f} سنة"
 
+    # نافذة زمنية محددة حقيقية: الزيادة في الطلبات منذ آخر لقطة (delta) خلال days_between
+    window_label = ""
+    if sales_delta is not None and sales_delta > 0 and days_between:
+        window_label = f"🔥 +{sales_delta:,} طلب خلال آخر {int(round(days_between))} أيام".replace(",", "٬")
+
     is_new = section == "exclusive"
     if is_new:
-        sales_label = (f"{sales:,} طلب — {age_label}".replace(",", "٬")
-                       if age_label else f"{sales:,} طلب — جديد".replace(",", "٬"))
+        base = (f"{sales:,} طلب — {age_label}".replace(",", "٬")
+                if age_label else f"{sales:,} طلب — جديد".replace(",", "٬"))
     else:
         parts = [f"{sales:,} طلب".replace(",", "٬")]
         if calibrated and velocity >= 1:
             parts.append(f"{int(velocity)}/يوم")
-        sales_label = " • ".join(parts)
+        base = " • ".join(parts)
+    # النافذة المحددة لها الأولوية في العرض (هذا ما طلبه المستخدم)
+    sales_label = f"{window_label} — {base}" if window_label else base
 
     return {
         "id": "ali_" + str(item.get("itemId", title[:10])),
@@ -279,7 +286,12 @@ def main():
     # سرعة = المبيعات ÷ عمر المنتج (من itemId). منتج جديد بمبيعات عالية = رواج
     # حدث خلال أيامه القليلة = الأكثر رواجاً الآن. الترتيب صحيح بلا معايرة.
     candidates = [p for p in pool if p["_velocity"] > 0]
-    candidates.sort(key=lambda p: p["_velocity"], reverse=True)
+    # لو توفّرت لقطة سابقة، نرتّب بالنمو الحقيقي خلال النافذة (momentum)؛ وإلا بالسرعة
+    has_window = any(p["_momentum"] > 0 for p in candidates)
+    if has_window:
+        candidates.sort(key=lambda p: (p["_momentum"], p["_velocity"]), reverse=True)
+    else:
+        candidates.sort(key=lambda p: p["_velocity"], reverse=True)
     vmax = candidates[0]["_velocity"] if candidates else 1.0
     for p in candidates:
         heat = int(min(100, (p["_velocity"] / vmax) * 100)) if vmax else 0
