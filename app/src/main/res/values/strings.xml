@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ترند المنتجات</string>
+    <string name="tab_trending">الترند اليومي</string>
+    <string name="tab_top_selling">الأعلى مبيعاً</string>
+    <string name="tab_hot_new">جديد وحار</string>
+    <string name="last_updated">آخر تحديث: </string>
+    <string name="refresh">تحديث</string>
+    <string name="trend_score">نقاط الترند</string>
+    <string name="sales_count">المبيعات</string>
+    <string name="source">المصدر</string>
+    <string name="price">السعر</string>
+    <string name="rating">التقييم</string>
+    <string name="view_product">عرض المنتج</string>
+    <string name="new_badge">جديد</string>
+    <string name="loading">جاري التحميل…</string>
+    <string name="error_loading">خطأ في التحميل</string>
+    <string name="retry">إعادة المحاولة</string>
+    <string name="reviews">مراجعة</string>
+</resources>

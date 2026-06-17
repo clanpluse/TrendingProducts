@@ -1,0 +1,4 @@
+-keep class com.trending.products.data.model.** { *; }
+-keep class com.trending.products.data.network.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
