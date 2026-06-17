@@ -47,6 +47,11 @@ EXCLUSIVE_MAX_AGE = 60          # يوم
 EXCLUSIVE_MAX_SALES = 800
 TRENDING_MAX_AGE = 120          # يوم — "صاعد" يجب أن يكون شاباً
 
+# إثبات العمر بتاريخ أقدم تقييم (قابل للتحقق من المستخدم)
+REVIEW_HOST_PATH = f"https://{HOST}/item_review"
+NEW_PROOF_MAX_AGE = 45          # يوم — يُعدّ "جديداً" إذا أقدم تقييم خلال هذه المدة
+REVIEW_CHECK_LIMIT = 8          # عدد المنتجات التي نتحقق من تقييماتها (توفيراً للرصيد)
+
 # نعتمد ترتيب AliExpress الرسمي قدر المتاح:
 #  - orders  = الأكثر مبيعاً (تراكمي)
 #  - default = ترتيب AliExpress الأصلي للرواج (Hot/Trending — يدمج الطلبات+المتابعة+الرغبات)
@@ -75,6 +80,29 @@ def api_search(query, sort, retries=3):
         time.sleep(6)
     print(f"    [{query}] no results")
     return []
+
+
+def fetch_oldest_review_date(item_id, retries=2):
+    """يرجّع (datetime لأقدم تقييم ظاهر, عدد التقييمات المقروءة) — دليل قابل للتحقق على عمر المنتج."""
+    headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": HOST}
+    params = {"itemId": str(item_id), "page": "1", "filter": "allReviews", "sort": "complex"}
+    for _ in range(retries):
+        try:
+            r = requests.get(REVIEW_HOST_PATH, headers=headers, params=params, timeout=35)
+            revs = r.json().get("result", {}).get("resultList", []) or []
+            dates = []
+            for rv in revs:
+                ds = (rv.get("review", rv)).get("reviewDate", "")
+                try:
+                    dates.append(datetime.strptime(ds, "%d %b %Y"))
+                except Exception:
+                    pass
+            if dates:
+                return min(dates), len(dates)
+        except Exception as e:
+            print(f"    review[{item_id}] err: {e}")
+        time.sleep(5)
+    return None, 0
 
 
 def parse_sales(item):
@@ -299,17 +327,41 @@ def main():
     # مجمّع "الأحدث" (sort=newest) — يغذّي قسمين دون تكلفة إضافية
     pool_ex = built["exclusive"]
 
-    # ===== الأكثر مبيعاً الجديد (هذا الشهر): منتجات حديثة مرتّبة حسب الطلبات =====
-    # المنطق: المنتج الحديث مبيعاته التراكمية = مبيعات فترته الأخيرة (≈ الشهر).
+    # ===== الأكثر مبيعاً الجديد — مع إثبات العمر بتاريخ أقدم تقييم =====
+    # المنطق: نتحقق فعلياً من عمر المنتج عبر أقدم تقييم (قابل للتحقق من المستخدم).
+    # يدخل التبويب فقط إذا كان أقدم تقييم خلال آخر NEW_PROOF_MAX_AGE يوماً.
     import copy
-    new_best = copy.deepcopy(pool_ex)
-    new_best.sort(key=lambda p: p["_sales"], reverse=True)
-    new_best = new_best[:15]
-    for p in new_best:
-        p["isNew"] = True
-        s = p["_sales"]
-        # المبيعات حدثت خلال عمر المنتج القصير ⇒ ≈ مبيعات الشهر
-        p["salesCount"] = f"🆕 {s:,} طلب — مبيعات الفترة الأخيرة (منتج جديد)".replace(",", "٬")
+    candidates_nb = sorted(copy.deepcopy(pool_ex), key=lambda p: p["_sales"], reverse=True)
+    today = datetime.now(timezone.utc).replace(tzinfo=None)
+    new_best, checked = [], 0
+    for p in candidates_nb:
+        if checked >= REVIEW_CHECK_LIMIT or len(new_best) >= 15:
+            break
+        iid = p.get("_itemId", "")
+        if not iid:
+            continue
+        checked += 1
+        oldest, n = fetch_oldest_review_date(iid)
+        time.sleep(3)
+        if oldest is None:
+            continue
+        age = (today - oldest).days
+        proof_date = oldest.strftime("%Y-%m-%d")
+        if age <= NEW_PROOF_MAX_AGE:   # جديد مُثبَت
+            p["isNew"] = True
+            p["launchDate"] = proof_date
+            s = p["_sales"]
+            p["salesCount"] = (
+                f"🆕 {s:,} طلب — أقدم تقييم {proof_date} (عمره ~{age} يوم)".replace(",", "٬")
+            )
+            p["description"] = f"إثبات العمر: أقدم تقييم بتاريخ {proof_date} — افتح المنتج للتحقق"
+            new_best.append(p)
+    # احتياط: لو لم نجد منتجات مُثبتة الحداثة، نعرض الأحدث ترتيباً مع توضيح أن العمر غير مُثبت
+    if not new_best:
+        new_best = sorted(copy.deepcopy(pool_ex), key=lambda p: p["_sales"], reverse=True)[:10]
+        for p in new_best:
+            p["isNew"] = True
+            p["salesCount"] = f"🆕 {p['_sales']:,} طلب — (العمر غير مُثبت بعد)".replace(",", "٬")
 
     # ===== حصري جديد: الأحدث (sort=newest) + مبيعات قليلة =====
     exclusive = [p for p in pool_ex if p["_age"] <= EXCLUSIVE_MAX_AGE and p["_sales"] < EXCLUSIVE_MAX_SALES]
