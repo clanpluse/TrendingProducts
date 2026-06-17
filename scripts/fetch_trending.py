@@ -275,13 +275,31 @@ def main():
     if not alibaba:
         alibaba = sorted(pool, key=lambda p: p["_sales"], reverse=True)[:15]
 
-    # تصنيف دقيق بالعمر الحقيقي
+    # ========= المعادلة العبقرية اللحظية: سرعة الرواج =========
+    # سرعة = المبيعات ÷ عمر المنتج (من itemId). منتج جديد بمبيعات عالية = رواج
+    # حدث خلال أيامه القليلة = الأكثر رواجاً الآن. الترتيب صحيح بلا معايرة.
+    candidates = [p for p in pool if p["_velocity"] > 0]
+    candidates.sort(key=lambda p: p["_velocity"], reverse=True)
+    vmax = candidates[0]["_velocity"] if candidates else 1.0
+    for p in candidates:
+        heat = int(min(100, (p["_velocity"] / vmax) * 100)) if vmax else 0
+        if heat >= 70:
+            tag = "🚀 رواج صاروخي"
+        elif heat >= 40:
+            tag = "🔥 رواج عالٍ"
+        else:
+            tag = "📈 رواج متوسط"
+        # المبيعات حدثت خلال عمر المنتج القصير ⇒ نشاط حديث
+        p["salesCount"] = f"{tag} — {p['salesCount']}"
+        p["trendScore"] = max(p["trendScore"], 50 + heat // 2)
+
+    # رائج = الأعلى سرعة رواج (لحظي، فوري)
+    trending = candidates[:15]
+
+    # تصنيف دقيق: حصري جديد = عمر صغير + مبيعات قليلة
     exclusive = [p for p in pool if p["_age"] <= EXCLUSIVE_MAX_AGE and p["_sales"] < EXCLUSIVE_MAX_SALES]
-    trending = [p for p in pool if p["_age"] <= TRENDING_MAX_AGE and p["_sales"] >= EXCLUSIVE_MAX_SALES]
     if not exclusive:
         exclusive = sorted(pool, key=lambda p: p["_age"])[:10]
-    if not trending:
-        trending = sorted(pool, key=lambda p: (p["_momentum"], p["_velocity"]), reverse=True)[:10]
     for p in exclusive:
         p["isNew"] = True
 
