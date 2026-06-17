@@ -47,13 +47,17 @@ EXCLUSIVE_MAX_AGE = 60          # يوم
 EXCLUSIVE_MAX_SALES = 800
 TRENDING_MAX_AGE = 120          # يوم — "صاعد" يجب أن يكون شاباً
 
+# نعتمد ترتيب AliExpress الرسمي قدر المتاح:
+#  - orders  = الأكثر مبيعاً (تراكمي)
+#  - default = ترتيب AliExpress الأصلي للرواج (Hot/Trending — يدمج الطلبات+المتابعة+الرغبات)
+#  - newest  = الأحدث إضافة (للحصري الجديد)
 QUERIES = [
-    ("best seller electronics", "orders", "topSelling"),
-    ("home kitchen gadget",     "orders", "topSelling"),
-    ("wholesale bulk lot",      "orders", "alibaba"),
-    ("new gadget",              "newest", "_pool"),
-    ("phone accessories new",   "newest", "_pool"),
-    ("creative product",        "newest", "_pool"),
+    ("best seller electronics", "orders",  "topSelling"),
+    ("home kitchen best",       "orders",  "topSelling"),
+    ("wholesale bulk lot",      "orders",  "alibaba"),
+    ("trending products",       "default", "trending"),   # ترتيب AliExpress الرسمي للرائج
+    ("hot products gadget",     "default", "trending"),    # ترتيب AliExpress الرسمي للساخن
+    ("new arrival gadget",      "newest",  "exclusive"),   # الأحدث للحصري الجديد
 ]
 
 
@@ -230,7 +234,7 @@ def main():
             pass
 
     print(f"Fetching REAL data (history items: {len(history)-1 if history else 0})...")
-    raw_by_target = {"topSelling": [], "alibaba": [], "_pool": []}
+    raw_by_target = {"topSelling": [], "alibaba": [], "trending": [], "exclusive": []}
     all_ids = []
     for q, sort, target in QUERIES:
         print(f"  '{q}' (sort={sort}) -> {target}")
@@ -262,56 +266,41 @@ def main():
         return to_product(raw, section, age, calibrated, delta, days_between)
 
     seen = set()
-    top, alibaba, pool = [], [], []
-    for raw in raw_by_target["topSelling"]:
-        p = build(raw, "topSelling")
-        if p and p["name"] not in seen:
-            seen.add(p["name"]); top.append(p)
-    for raw in raw_by_target["alibaba"]:
-        p = build(raw, "alibaba")
-        if p and p["name"] not in seen:
-            seen.add(p["name"]); alibaba.append(p)
-    for raw in raw_by_target["_pool"]:
-        p = build(raw, "_pool")
-        if p and p["name"] not in seen:
-            seen.add(p["name"]); pool.append(p)
+    built = {"topSelling": [], "alibaba": [], "trending": [], "exclusive": []}
+    for target in built:
+        for raw in raw_by_target[target]:
+            p = build(raw, target)
+            if p and p["name"] not in seen:
+                seen.add(p["name"]); built[target].append(p)
+    top, alibaba = built["topSelling"], built["alibaba"]
 
-    # احتياط: لو فرغ "الأعلى مبيعاً" (تقطّع API)، نملؤه من أعلى مبيعات المجمّع
+    # تجميعة احتياطية من كل ما جُلب (لملء أي قسم فرغ بسبب تقطّع الـ API)
+    all_built = top + alibaba + built["trending"] + built["exclusive"]
     if not top:
-        top = sorted(pool, key=lambda p: p["_sales"], reverse=True)[:15]
+        top = sorted(all_built, key=lambda p: p["_sales"], reverse=True)[:15]
     if not alibaba:
-        alibaba = sorted(pool, key=lambda p: p["_sales"], reverse=True)[:15]
+        alibaba = sorted(all_built, key=lambda p: p["_sales"], reverse=True)[:15]
 
-    # ========= المعادلة العبقرية اللحظية: سرعة الرواج =========
-    # سرعة = المبيعات ÷ عمر المنتج (من itemId). منتج جديد بمبيعات عالية = رواج
-    # حدث خلال أيامه القليلة = الأكثر رواجاً الآن. الترتيب صحيح بلا معايرة.
-    candidates = [p for p in pool if p["_velocity"] > 0]
-    # لو توفّرت لقطة سابقة، نرتّب بالنمو الحقيقي خلال النافذة (momentum)؛ وإلا بالسرعة
-    has_window = any(p["_momentum"] > 0 for p in candidates)
-    if has_window:
-        candidates.sort(key=lambda p: (p["_momentum"], p["_velocity"]), reverse=True)
-    else:
-        candidates.sort(key=lambda p: p["_velocity"], reverse=True)
-    vmax = candidates[0]["_velocity"] if candidates else 1.0
-    for p in candidates:
-        heat = int(min(100, (p["_velocity"] / vmax) * 100)) if vmax else 0
-        if heat >= 70:
-            tag = "🚀 رواج صاروخي"
-        elif heat >= 40:
-            tag = "🔥 رواج عالٍ"
-        else:
-            tag = "📈 رواج متوسط"
-        # المبيعات حدثت خلال عمر المنتج القصير ⇒ نشاط حديث
+    # ===== رائج: ترتيب AliExpress الرسمي (sort=default) كأساس =====
+    # نحافظ على ترتيب AliExpress الأصلي، ونضيف فوقه نافذة "آخر 3 أيام" (delta) إن توفّرت.
+    trending = built["trending"] or sorted(all_built, key=lambda p: p["_velocity"], reverse=True)
+    # لو توفّرت لقطة سابقة: نرفع الأعلى نمواً فعلياً خلال النافذة لأعلى القائمة
+    if any(p["_momentum"] > 0 for p in trending):
+        trending.sort(key=lambda p: (p["_momentum"], p["_sales"]), reverse=True)
+    # وسم حرارة الرواج (نسبي، لا يحتاج معايرة)
+    vmax = max((p["_velocity"] for p in trending), default=1.0) or 1.0
+    for p in trending:
+        heat = int(min(100, (p["_velocity"] / vmax) * 100))
+        tag = "🚀 رواج صاروخي" if heat >= 70 else ("🔥 رواج عالٍ" if heat >= 40 else "📈 رواج")
         p["salesCount"] = f"{tag} — {p['salesCount']}"
         p["trendScore"] = max(p["trendScore"], 50 + heat // 2)
+    trending = trending[:15]
 
-    # رائج = الأعلى سرعة رواج (لحظي، فوري)
-    trending = candidates[:15]
-
-    # تصنيف دقيق: حصري جديد = عمر صغير + مبيعات قليلة
-    exclusive = [p for p in pool if p["_age"] <= EXCLUSIVE_MAX_AGE and p["_sales"] < EXCLUSIVE_MAX_SALES]
+    # ===== حصري جديد: الأحدث (sort=newest) + مبيعات قليلة =====
+    pool_ex = built["exclusive"]
+    exclusive = [p for p in pool_ex if p["_age"] <= EXCLUSIVE_MAX_AGE and p["_sales"] < EXCLUSIVE_MAX_SALES]
     if not exclusive:
-        exclusive = sorted(pool, key=lambda p: p["_age"])[:10]
+        exclusive = sorted(pool_ex or all_built, key=lambda p: p["_age"])[:10]
     for p in exclusive:
         p["isNew"] = True
 
@@ -328,7 +317,7 @@ def main():
 
     # حفظ اللقطة (للزخم القادم)
     new_hist = {"_date": datetime.now(timezone.utc).strftime("%Y-%m-%d")}
-    for p in top + alibaba + pool:
+    for p in all_built:
         if p["_itemId"]:
             new_hist[p["_itemId"]] = p["_sales"]
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
