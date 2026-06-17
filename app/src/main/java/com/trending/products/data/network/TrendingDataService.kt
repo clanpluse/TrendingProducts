@@ -8,11 +8,22 @@ interface TrendingDataService {
     suspend fun getTrendingData(): Response<TrendingJsonData>
 }
 
+/**
+ * البنية الجديدة: 3 فترات زمنية (يوم / أسبوع / شهر)،
+ * كل فترة تحتوي 4 أقسام منفصلة لتفادي التداخل عند القراءة.
+ */
 data class TrendingJsonData(
     val updatedAt: String?,
-    val topSelling: List<JsonProduct>?,
-    val chineseFactory: List<JsonProduct>?,
-    val hotNew: List<JsonProduct>?
+    val day: TimeframeData?,
+    val week: TimeframeData?,
+    val month: TimeframeData?
+)
+
+data class TimeframeData(
+    val topSelling: List<JsonProduct>?,   // الأعلى مبيعاً فعلياً
+    val alibaba: List<JsonProduct>?,      // علي بابا ومنافسوه (جملة B2B)
+    val trending: List<JsonProduct>?,     // الأعلى اهتماماً في البحث
+    val exclusive: List<JsonProduct>?     // حصري جديد: مبيعات قليلة + اهتمام صاعد
 )
 
 data class JsonProduct(
@@ -28,5 +39,7 @@ data class JsonProduct(
     val salesCount: String?,
     val rating: Float?,
     val isNew: Boolean?,
-    val source: String?
+    val source: String?,
+    val trend: String?,          // UP / DOWN / STABLE — اتجاه الاهتمام
+    val interestScore: Int?      // درجة اهتمام البحث (Google Trends)
 )

@@ -24,8 +24,9 @@ class ProductListFragment : Fragment() {
     companion object {
         private const val ARG_TAB = "tab_type"
         const val TAB_TOP_SELLING = 0
-        const val TAB_CHINESE_FACTORY = 1
-        const val TAB_HOT_NEW = 2
+        const val TAB_ALIBABA = 1
+        const val TAB_TRENDING = 2
+        const val TAB_EXCLUSIVE = 3
 
         fun newInstance(tabType: Int) = ProductListFragment().apply {
             arguments = Bundle().apply { putInt(ARG_TAB, tabType) }
@@ -74,10 +75,11 @@ class ProductListFragment : Fragment() {
 
     private fun observeData() {
         val liveData = when (tabType) {
-            TAB_TOP_SELLING      -> viewModel.topSelling
-            TAB_CHINESE_FACTORY  -> viewModel.chineseFactory
-            TAB_HOT_NEW          -> viewModel.hotNew
-            else                 -> viewModel.topSelling
+            TAB_TOP_SELLING -> viewModel.topSelling
+            TAB_ALIBABA     -> viewModel.alibaba
+            TAB_TRENDING    -> viewModel.trending
+            TAB_EXCLUSIVE   -> viewModel.exclusive
+            else            -> viewModel.topSelling
         }
         liveData.observe(viewLifecycleOwner) { state ->
             swipeRefresh.isRefreshing = false
